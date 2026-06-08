@@ -27,6 +27,8 @@ examples/*/output*
 examples/*/*/output*
 RES*
 tmp
+examples/nparini/*.pdf
+examples/nparini/*.png
 
 # mypy
 .mypy_cache/
