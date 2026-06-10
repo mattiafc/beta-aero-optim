@@ -8,7 +8,7 @@ key_file_riemann = "~/.ssh/riemann"
 
 hostname_irene = "irene-fr.ccc.cea.fr"
 username_irene = "ciarlatm"
-password_irene = "Matt_281192Matt_281192"
+password_irene = "password"
 
 fileName = "high_infill_1"
 remote_dir = "/ccc/scratch/cont003/gen13457/ciarlatm/Irene/irene_parallel_optimization/"
