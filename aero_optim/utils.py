@@ -3,6 +3,7 @@ import glob
 import json
 import logging
 import numpy as np
+import sys
 import os.path
 import shutil
 import signal
@@ -168,10 +169,12 @@ def catch_signal():
 
 
 def get_custom_class(filename: str, module_name: str):
-    """
-    Returns a customized object (evolution, optimizer, simulator or mesh).
-    """
     try:
+        # ensure the file's directory is importable
+        file_dir = os.path.dirname(os.path.abspath(filename))
+        if file_dir not in sys.path:
+            sys.path.insert(0, file_dir)
+
         spec_class = importlib.util.spec_from_file_location(module_name, filename)
         if spec_class and spec_class.loader:
             custom_class = importlib.util.module_from_spec(spec_class)
@@ -179,8 +182,8 @@ def get_custom_class(filename: str, module_name: str):
             MyClass = getattr(custom_class, module_name)
             logger.info(f"successfully recovered {module_name}")
             return MyClass
-    except Exception:
-        logger.warning(f"could not find {module_name} in {filename}")
+    except Exception as e:
+        logger.warning(f"could not find {module_name} in {filename}: {e}") 
         return None
 
 
