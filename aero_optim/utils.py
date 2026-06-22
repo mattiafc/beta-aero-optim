@@ -13,7 +13,7 @@ import time
 from types import FrameType
 
 STUDY_TYPE = ["naca_base", "naca_block", "cascade", "musicaa"]
-FFD_TYPE = ["ffd_2d", "ffd_pod_2d", "dlr_2d", "dlr_pod_2d",]
+FFD_TYPE = ["ffd_2d", "ffd_pod_2d", "dlr_2d", "dlr_pod_2d", "parablade_2d", "parablade_pod_2d"]
 logger = logging.getLogger(__name__)
 
 
@@ -169,6 +169,9 @@ def catch_signal():
 
 
 def get_custom_class(filename: str, module_name: str):
+    """
+    Returns a customized object (evolution, optimizer, simulator or mesh).
+    """
     try:
         # ensure the file's directory is importable
         file_dir = os.path.dirname(os.path.abspath(filename))

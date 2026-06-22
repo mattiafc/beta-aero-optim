@@ -3,6 +3,7 @@ import math
 from Cython import profile
 import numpy as np
 import os
+import shutil
 import copy
 
 from abc import ABC, abstractmethod
@@ -13,6 +14,10 @@ from joblib import Parallel, delayed
 from scipy.interpolate import interp1d
 
 import matplotlib.pyplot as plt
+import pandas as pd
+
+from parablade.blade_3D import Blade3D
+from parablade.common.config import ReadUserInput
 
 # from sklearn.calibration import delayed
 
@@ -566,6 +571,228 @@ class DLR(ABC):
         np.savetxt(os.path.join(outdir, outfile), profile[:-1,:],
                    header=f"Deformed profile {outfile}\nParams={[d for d in Delta]}")
         return os.path.join(outdir, outfile)
+    
+class ParaBlade(ABC):
+    """
+    This class implements an abstract ParaBlade class.
+    """
+    def __init__(self, dat_file: str, baseline_dir: str, param_bounds: dict, header: int = 2, scale: float = 1, **kwargs):
+        """
+        Instantiates the abstract ParaBlade object.
+        **Input**
+        - dat_file (str): path to input_geometry.dat.
+        - baseline_dir (str): path to folder containing baseline matched parametrization/coordinates obtained with ParaBlade BladeMatch.
+        - param_bounds (dict): dictionary of the parameters' bounds.
+        - header (int): the number of header lines in dat_file.
+        - scale (float): the geometry scaling factor
+        **Inner**
+        - pts (np.ndarray): the geometry coordinates in the original referential.
+
+            pts = [[x0, y0, z0], [x1, y1, z1], ..., [xN, yN, zN]]
+            where N is the number of points describing the geometry and (z0, ..., zN)
+            are null or identical.
+        """
+        self.baseline_dir = baseline_dir
+        self.param_bounds: dict = param_bounds
+        self.scale = scale
+        self.dat_file: str = dat_file
+
+        self.config_baseline = os.path.join(self.baseline_dir, 'matched_parametrization.cfg')
+        self.coordinates_baseline = pd.read_csv(os.path.join(self.baseline_dir, 'matched_coordinates.csv'), sep=',\t')
+
+        temp = np.array(from_dat(dat_file, header))
+
+        if temp.shape[1] == 3:
+            self.pts = temp[:,:-1]
+        elif temp.shape[1] == 2:
+            self.pts = temp[:,:]
+        else:
+            raise ValueError(f"Unexpected shape {temp.shape} for points array.")
+
+    def generate_dict(self, Delta: np.ndarray) -> dict:
+        """
+        **Generates** dictionary of parameters associated to the case, **reads** valus from Delta array.
+        """
+        params_dict = {}
+        cont = 0
+        for k in self.param_bounds.keys():
+            params_dict[k] = Delta[cont]
+            cont += 1
+
+        return params_dict
+    
+    def write_config_input(self, out_dir: str, input_dict: dict, no_rewriting: bool = False) -> None:
+        """
+        **Manages** modifying of config (.cfg) file for the specific case.
+        """
+        if no_rewriting == True and os.path.exists(os.path.join(out_dir, 'parablade_input.cfg')):
+            return
+
+        os.makedirs(out_dir, exist_ok=True)
+        out_file = os.path.join(out_dir, 'parablade_input.cfg')
+        self.update_config_file(input_dict, out_file)
+
+    def update_config_file(self, updates, file_output):
+        """
+        **Reads** a .cfg file, updates specific parameters, and saves it back.
+    
+        """
+        updated_lines = []
+        
+        # Read the original file and modify the target lines
+        with open(self.config_baseline, 'r') as file:
+            for line in file:
+                stripped_line = line.strip()
+                
+                # Skip empty lines or comments
+                if not stripped_line or stripped_line.startswith('#'):
+                    updated_lines.append(line)
+                    continue
+                
+                # Split by the first '=' found
+                if '=' in stripped_line:
+                    key, value = stripped_line.split('=', 1)
+                    key = key.strip()
+                    
+                    # If this key is in our updates dictionary, modify it
+                    if key in updates:
+                        new_value = updates[key]
+                        line = f"{key}={new_value}\n"
+                        
+                updated_lines.append(line)
+                
+        # Write the modified lines back to the file
+        with open(file_output, 'w') as file:
+            file.writelines(updated_lines)
+        
+    def extract_data(self, out_dir: str) -> np.ndarray:
+        """
+        **Extracts** x-y arrays coordinates from the Blade3D (ParaBlade) object generated 
+        from the config file of the specific case. **Writes** profile array (n_points_on_profile X 2).
+        """
+        config_file = os.path.join(out_dir, 'parablade_input.cfg')
+        config = ReadUserInput(config_file)
+        blade_object = Blade3D(config)
+        profile_blade = blade_object.get_surface_coordinates(np.array(self.coordinates_baseline["\"u\""]), np.array(self.coordinates_baseline["\"v\""]))
+        x_array = profile_blade[0,:].real
+        y_array = profile_blade[1,:].real
+        
+        return np.column_stack((x_array, y_array))
+    
+    def write_ffd(self, profile: np.ndarray, Delta: np.ndarray, outdir: str, gid: int = 0, cid: int = 0) -> str:
+        """
+        **Writes** the deformed geometry to file and **returns** /path/to/outdir/outfile.
+
+        - profile (np.ndarray): the deformed geometry coordinates to be written to outfile.
+        - Delta (np.ndarray): the deformation vector.
+        - outdir (str): the output directory (it is to be combined with outfile).
+        """
+
+        outfile = f"{self.dat_file.split('/')[-1][:-4]}_g{gid}_c{cid}.dat"
+        check_dir(outdir)
+        logger.info(f"write profile g{gid} c{cid} as {outfile} to {outdir}")
+        np.savetxt(os.path.join(outdir, outfile), profile[:,:],
+                   header=f"Deformed profile {outfile}\nParams={[d for d in Delta]}")
+        return os.path.join(outdir, outfile)
+
+class ParaBlade_2D(ParaBlade):
+    def __init__(self, dat_file: str, baseline_dir: str, param_bounds: dict, header: int = 2, scale: float = 1, **kwargs):
+
+        super().__init__(dat_file, baseline_dir, param_bounds, header, scale, **kwargs)
+
+    def apply_ffd(self, Delta: np.ndarray, dirNumber : int = None, no_rewriting: bool = False) -> np.ndarray:
+                  
+        dir = os.path.join(self.baseline_dir, 'temp'+str(dirNumber))
+        params_dict = self.generate_dict(Delta)
+
+        self.write_config_input(dir, params_dict, no_rewriting)
+
+        profile = self.extract_data(dir)
+
+        if dirNumber is None:
+            os.system(f'rm -r {dir}')
+
+        return profile*self.scale
+
+class ParaBlade_POD_2D(ParaBlade):
+    """
+    Class to implement POD+Parablade_2D element. (Very similar to DLR_POD_2D class,
+    small adjustments made to match ParaBlade implementation).
+    """ 
+
+    def __init__(self,
+                 dat_file: str,
+                 baseline_dir: str,
+                 param_bounds: dict,
+                 pod_ncontrol: int,
+                 ffd_dataset_size: int,
+                 seed: int = 123,
+                 header: int = 2,
+                 scale: float = 1,
+                 perturb_POD = 'TrueMean', **kwargs):
+
+        super().__init__(dat_file, baseline_dir, param_bounds, header, scale, **kwargs)
+
+        self.ffd_ncontrol = len(self.param_bounds)
+        self.pod_ncontrol = pod_ncontrol
+        self.dat_file = dat_file
+        self.perturb_POD = perturb_POD
+
+        self.ffd_dataset_size = ffd_dataset_size
+        self.ffd = ParaBlade_2D(dat_file, baseline_dir, param_bounds, scale=scale)
+        self.seed = seed
+        self.build_pod_dataset()
+    
+    def build_pod_dataset(self):
+        sampler = qmc.LatinHypercube(d=self.ffd_ncontrol, seed=self.seed)
+        sample = sampler.random(n=self.ffd_dataset_size)
+
+        keys = list(self.param_bounds.keys())
+        ul_bounds = np.array(list(self.param_bounds.values()))
+        scaled_sample = qmc.scale(sample, l_bounds=ul_bounds[:,0], u_bounds=ul_bounds[:,1])
+
+        orig_profiles = Parallel(n_jobs=96)(delayed(self.ffd.apply_ffd)
+                                   (scaled_sample[i],i, True)
+                                   for i in range(len(scaled_sample)))
+
+        profiles = []
+        for i, p in enumerate(orig_profiles):
+            profiles.append(p)
+            shutil.rmtree(os.path.join(self.baseline_dir, 'temp'+str(i)))
+        self.profiles = copy.deepcopy(profiles)
+        
+        if self.perturb_POD == 'Baseline':
+            for idx in range(len(profiles)):
+                profiles[idx][:,1] = self.profiles[idx][:,1] - self.ffd.pts[:,1]
+
+
+        self.S = np.stack([p[:, -1] for p in profiles] , axis=1)
+        self.S_mean = 1 / len(profiles) * np.sum(self.S, axis=1)
+        # self.S_mean = self.ffd.pts[:, -1]
+        self.F = self.S[:, :] - self.S_mean[:, None]
+        self.C = np.matmul(np.transpose(self.F), self.F)
+        self.eigenvalues, self.eigenvectors = np.linalg.eigh(self.C)
+        self.phi = np.matmul(self.F, self.eigenvectors)
+
+        nmode = self.pod_ncontrol
+        self.phi_tilde = self.phi[:, -nmode:]
+        self.V_tilde_inv = np.linalg.inv(self.eigenvectors)[-nmode:, :]
+        self.D_tilde = self.S_mean[:, None] + np.matmul(self.phi_tilde, self.V_tilde_inv)
+
+        logger.info(f"POD Bounds are : {self.get_bound()}")
+
+    def apply_ffd(self, Delta: np.ndarray) -> np.ndarray:
+        if self.perturb_POD == 'TrueMean':
+            output_profile = np.column_stack((self.ffd.pts[:, 0], self.S_mean + np.sum(self.phi_tilde * Delta, axis=1)))
+        elif self.perturb_POD == 'Baseline':
+            output_profile = np.column_stack((self.ffd.pts[:, 0], self.S_mean + self.ffd.pts[:, 1] + np.sum(self.phi_tilde * Delta, axis=1)))
+        return output_profile
+
+    def get_bound(self) -> tuple[list[float], list[float]]:
+        l_bound = [min(v) for v in self.V_tilde_inv]
+        u_bound = [max(v) for v in self.V_tilde_inv]
+        return l_bound, u_bound
+
 
 class DLR_2D(DLR):
 

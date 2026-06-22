@@ -1,0 +1,67 @@
+{
+    "study": {
+        "custom_file": "/home/nparini/beta-aero-optim/examples/nparini/1st_RANS_test/custom_cascade_musicaa.py",
+        "study_type": "musicaa",
+        "ffd_type": "ffd_pod_2d",
+        "file": "coarse_mesh/L030.dat",
+        "outdir": "output"
+    },
+    "gmsh": {
+        "mesh_dir": "coarse_mesh",
+        "mesh_name": "L030rc",
+        "wall_bl": [3,4,7,6],
+        "periodic_bl": [6],
+        "pitch": 0.621,
+        "chord_length": 0.9,
+        "inlet_bl": [1,2],
+        "outlet_bl": [8,9]
+    },
+    "optim": {
+        "n_design": 8,
+        "doe_size": 4,
+        "max_generations": 1,
+        "bound": [-0.05, 0.05],
+        "QoI": "MixedoutOmega",
+        "budget": 1,
+        "constraint": false,
+        "baseline_w_ADP": 0.0788,
+        "baseline_w_OP": 0.0788,
+        "sampler_name": "lhs"
+    },
+    "ffd": {
+        "pod_ncontrol": 4,
+        "ffd_dataset_size": 1000,
+        "rotation": false,
+        "rot_bound": [-2, 2]
+    },
+    "simulator": {
+        "ref_input": "cascade_musicaa_base.json",
+        "cp_list": ["param.ini", "param_blocks.ini", "param_rans.ini", "param_pp.ini", "feos_air.ini",
+                     "restart_bl1.bin", "restart_bl2.bin", "restart_bl3.bin", "restart_bl4.bin", "restart_bl5.bin",
+                     "restart_bl6.bin", "restart_bl7.bin", "restart_bl8.bin", "restart_bl9.bin", "info.ini", "time.ini"],
+        "preprocess_cmd" : "/home/nparini/beta-aero-optim/examples/nparini/1st_RANS_test/musicaa",
+        "exec_cmd" : "python3 //home/nparini/beta-aero-optim/examples/nparini/1st_RANS_test/execute_RANS.py -adp -op1 -op2",
+        "restart_musicaa": 0,
+
+        "restart_criteria": {
+            "Mtarget": 1.1,
+            "Pref": 101325,
+            "pi": 1.85,
+            "iter_max": 6,
+            "mach_number_tol": 1e-3,
+            "n_iter_first": 500000,
+            "n_iter_later": 250000
+        },
+
+        "post_process": {
+            "measurement_lines": {
+                "inlet_x1": -0.3105,
+                "inlet_x2": -0.3105,
+                "outlet_x1":  2.0,
+                "outlet_x2":  2.0
+            },
+            "outputs": ["MixedoutOmega", "OutflowAngle"],
+            "file": "QoI_convergence.csv"
+        }
+    }
+}

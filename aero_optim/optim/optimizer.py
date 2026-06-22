@@ -14,7 +14,7 @@ from random import Random
 from typing import Any
 
 from aero_optim.geom import get_area
-from aero_optim.ffd.ffd import FFD_2D, FFD_POD_2D, DLR_2D, DLR_POD_2D, RotationWrapper
+from aero_optim.ffd.ffd import FFD_2D, FFD_POD_2D, DLR_2D, DLR_POD_2D, ParaBlade_2D, ParaBlade_POD_2D, RotationWrapper
 from aero_optim.mesh.mesh import MeshMusicaa
 from aero_optim.mesh.naca_base_mesh import NACABaseMesh
 from aero_optim.mesh.naca_block_mesh import NACABlockMesh
@@ -115,6 +115,8 @@ class Optimizer(ABC):
         self.nproc_per_sim: int = config["optim"].get("nproc_per_sim", 1)
         if 'dlr' in self.config["study"]['ffd_type']:
             self.bound = np.array(list(self.config["ffd"]['param_bounds'].values()))
+        elif 'parablade' in self.config["study"]["ffd_type"]:
+            self.bound = np.array(list(self.config["ffd"]['param_bounds'].values())).T
         else:
             self.bound = np.array(config["optim"].get("bound", [-1, 1]))
         self.custom_doe: str = config["optim"].get("custom_doe", "")
@@ -225,13 +227,27 @@ class Optimizer(ABC):
                 self.n_design = ffd_config["pod_ncontrol"]
                 self.bound = ffd_config.get("pod_bound", self.ffd.get_bound())
                 logger.info(f"pod bound: {self.bound}")
-            # standard FFD 2D
+            # standard BladeGen 2D
             elif self.ffd_type == FFD_TYPE[2]:
                 self.FFDClass = DLR_2D
                 self.ffd = self.FFDClass(self.dat_file, **ffd_config)
-                
+            # POD coupled BladeGen 2D    
             elif self.ffd_type == FFD_TYPE[3]:
                 self.FFDClass = DLR_POD_2D
+                ffd_config["ffd_ncontrol"] = len(ffd_config["param_bounds"])
+                ffd_config["ffd_bound"] = self.bound
+                logger.info(f"ffd bound: {self.bound}")
+                self.ffd = self.FFDClass(self.dat_file, **ffd_config)
+                self.n_design = ffd_config["pod_ncontrol"]
+                self.bound = ffd_config.get("pod_bound", self.ffd.get_bound())
+                logger.info(f"pod bound: {self.bound}")
+            # standard ParaBlade 2D
+            elif self.ffd_type == FFD_TYPE[4]:
+                self.FFDClass = ParaBlade_2D
+                self.ffd = self.FFDClass(self.dat_file, **ffd_config)
+            # POD coupled ParaBlade 2D
+            elif self.ffd_type == FFD_TYPE[5]:
+                self.FFDClass = ParaBlade_POD_2D
                 ffd_config["ffd_ncontrol"] = len(ffd_config["param_bounds"])
                 ffd_config["ffd_bound"] = self.bound
                 logger.info(f"ffd bound: {self.bound}")
